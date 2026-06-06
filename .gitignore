@@ -10,3 +10,9 @@ sdk/
 resources/installers/
 resources/python/
 resources/system-debs/
+
+# ROS/colcon local artifacts. The ROS2 ZED workspace lives outside this repo by default.
+build/
+install/
+log/
+ros2_zed_ws/

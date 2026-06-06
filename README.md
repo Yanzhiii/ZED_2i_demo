@@ -1,63 +1,134 @@
-# ZED 2i Demo
+# ZED 2i Bringup
 
-本项目用于在本机跑通 ZED 2i，并保留一个最小 Python 采集 demo。
+轻量 ROS2 Humble 包，用于单独启动 Stereolabs ZED 2i，并为后续接入其他 ROS2 项目做准备。
 
-## 当前状态
+English version: [README.en.md](README.en.md)
 
-- 相机：ZED 2i，SN `37970765`
-- SDK：ZED SDK `5.2.3`，本地安装在 `sdk/zed`
-- Python：`.venv` 内已安装 `pyzed 5.2`、`opencv-python`、`numpy`
-- 验证结果：`HD720@30` 打开成功，RGB/depth 采集 `30/30` 帧成功
-- 输出文件：`outputs/zed_left.png`、`outputs/zed_depth.png`
+## 目标
 
-## 快速运行
+- 提供一个最小 ROS2 package：`zed_2i_bringup`。
+- 保留一个非 ROS2 smoke test，方便先验证 ZED SDK、USB、权限和深度链路。
+- 其他项目只通过独立 workspace 对接；本仓库不修改外部项目。
+- 不提交本地 SDK、虚拟环境、输出图片、日志、本机绝对路径或真实相机序列号。
+
+## 依赖
+
+- Ubuntu 22.04 + ROS2 Humble。
+- ZED SDK 本地目录：`sdk/zed`，不提交到 Git。
+- Python 虚拟环境 `.venv`，用于非 ROS2 测试，不参与 ROS2 构建。
+- 官方 Stereolabs ROS2 wrapper underlay：默认位于 `~/Projects/ros2_zed_ws`。
+
+准备官方 underlay：
 
 ```bash
-source .venv/bin/activate
-source scripts/setup_env.sh
-python src/zed_quick_test.py --frames 30
+scripts/setup_ros2_zed.sh
 ```
 
-或直接运行：
+如果系统依赖已安装，只重建 underlay：
+
+```bash
+scripts/setup_ros2_zed.sh --skip-apt
+```
+
+## 非 ROS2 测试
+
+用于确认相机和 ZED SDK 正常：
 
 ```bash
 scripts/run_quick_test.sh --frames 30
 ```
 
-默认深度模式是 `NEURAL`。如果只想快速验证链路，可用较轻的模式：
+输出文件写入 `outputs/`，该目录不会提交到 Git。
+
+## ROS2 独立启动
+
+在当前仓库作为 workspace 构建：
 
 ```bash
-scripts/run_quick_test.sh --frames 30 --depth-mode PERFORMANCE
+source /opt/ros/humble/setup.bash
+source ~/Projects/ros2_zed_ws/install/setup.bash
+colcon build --symlink-install --packages-select zed_2i_bringup
+source install/setup.bash
 ```
+
+如果使用 zsh，把 `setup.bash` 换成 `setup.zsh`。
+
+启动 ZED 2i：
+
+```bash
+ros2 launch zed_2i_bringup zed2i.launch.py
+```
+
+如果需要固定相机：
+
+```bash
+export ZED_SERIAL_NUMBER=<ZED_SERIAL_NUMBER>
+ros2 launch zed_2i_bringup zed2i.launch.py
+```
+
+也可以用脚本启动：
+
+```bash
+scripts/run_zed_ros2.sh
+```
+
+常用检查：
+
+```bash
+ros2 topic hz /zed/zed_node/rgb/color/rect/image
+ros2 topic hz /zed/zed_node/depth/depth_registered
+ros2 topic hz /zed/zed_node/point_cloud/cloud_registered
+```
+
+## Launch 接口
+
+主入口：
+
+```bash
+ros2 launch zed_2i_bringup zed2i.launch.py
+```
+
+参数：
+
+- `camera_name`：默认 `zed`。
+- `camera_model`：默认 `zed2i`。
+- `serial_number`：默认读取 `ZED_SERIAL_NUMBER`，未设置时为 `0`。
+- `publish_tf`：默认 `true`。
+
+## 通用项目对接
+
+推荐在目标项目旁边创建独立 ZED overlay，不直接修改目标项目：
+
+```bash
+mkdir -p ~/Projects/<project>_zed_ws/src
+cd ~/Projects/<project>_zed_ws/src
+git clone <this-repo-url> zed_2i_bringup
+```
+
+构建：
+
+```bash
+cd ~/Projects/<project>_zed_ws
+source /opt/ros/humble/setup.bash
+source ~/Projects/ros2_zed_ws/install/setup.bash
+colcon build --symlink-install --packages-select zed_2i_bringup
+source install/setup.bash
+```
+
+运行时保持独立：一个终端启动目标项目原有 stack，另一个终端启动 `ros2 launch zed_2i_bringup zed2i.launch.py`。
+
+更完整的通用 overlay 对接说明见 [docs/INTEGRATION.md](docs/INTEGRATION.md)。
 
 ## 项目结构
 
-- `src/zed_quick_test.py`：最小 ZED Python demo，打开相机、抓帧、保存 RGB 和 depth preview。
-- `scripts/setup_env.sh`：设置 `ZED_DIR`、`LD_LIBRARY_PATH`、虚拟环境 `PATH`。
-- `scripts/check_connection.sh`：检查 USB、视频节点、ZED USB 权限、GPU 和本地 SDK。
-- `scripts/run_zed_explorer.sh`：启动官方图像查看工具。
-- `scripts/run_zed_depth_viewer.sh`：启动官方深度查看工具。
-- `scripts/run_zed_diagnostic.sh`：启动官方诊断工具。
-- `scripts/apply_system_rules.sh`：重新应用 ZED udev/sysctl/ldconfig 系统规则。
-- `sdk/zed/`：本地 ZED SDK、官方工具、官方 samples 和本地 API 文档。
-- `resources/system_rules/`：保留下来的 ZED udev/sysctl 规则文件。
-- `outputs/`：demo 生成的图片，可随时删除。
-
-## 建议阅读顺序
-
-1. 先读 `src/zed_quick_test.py`，重点看 `InitParameters`、`camera.open()`、`camera.grab()`、`retrieve_image()`、`retrieve_measure()`。
-2. 再跑 `scripts/check_connection.sh`，理解 ZED 2i 同时暴露 USB video 设备和 HID/MCU 控制设备。
-3. 用 `scripts/run_zed_explorer.sh` 看原始左右目图像，用 `scripts/run_zed_depth_viewer.sh` 看 SDK 深度效果。
-4. 打开 `sdk/zed/doc/API/Documentation_Python.html`，查 `sl.Camera`、`sl.InitParameters`、`sl.RuntimeParameters`、`sl.Mat`。
-5. 看官方示例目录：`sdk/zed/samples/depth sensing`、`sdk/zed/samples/positional tracking`、`sdk/zed/samples/object detection`。
-
-## 建立初步认知
-
-- ZED 2i 本质是双目相机 + IMU/MCU；图像走 UVC/video，传感器和控制走 HID/USB。
-- SDK 的基本循环是：配置 `InitParameters`，`open()` 相机，循环 `grab()`，再按需取 image/depth/point cloud。
-- RGB 图像来自 `retrieve_image(..., sl.VIEW.LEFT)`；深度来自 `retrieve_measure(..., sl.MEASURE.DEPTH)`。
-- 深度模式影响速度和质量；SDK 5.x 推荐 `NEURAL`，快速链路测试可以用 `PERFORMANCE`。
-- 标定文件会按相机序列号下载并缓存；本机已有 `sdk/zed/settings/SN37970765.conf`。
+- `package.xml` / `CMakeLists.txt`：最小 ROS2 package。
+- `launch/zed2i.launch.py`：include 官方 `zed_wrapper` 的 ZED 2i launch。
+- `src/zed_quick_test.py`：非 ROS2 smoke test。
+- `scripts/setup_ros2_zed.sh`：准备官方 ZED ROS2 underlay。
+- `scripts/run_zed_ros2.sh`：脚本方式启动 ROS2。
+- `scripts/run_quick_test.sh`：脚本方式运行非 ROS2 测试。
+- `scripts/check_connection.sh`：检查 USB、权限、GPU 和 SDK。
+- `resources/system_rules/`：ZED udev/sysctl 规则备份。
 
 ## 故障排查
 
@@ -65,15 +136,12 @@ scripts/run_quick_test.sh --frames 30 --depth-mode PERFORMANCE
 scripts/check_connection.sh
 ```
 
-如果出现 `Permissions denied : can't open device` 或 `NOT VALID SERIAL NUMBER FOR SENSORS MODULE MCU`：
+如果遇到权限问题：
 
 ```bash
 scripts/apply_system_rules.sh
-# 然后拔插相机，或重启登录会话
 ```
 
-如果仍有 MCU/serial 相关错误：
+然后拔插相机或重新登录。
 
-```bash
-scripts/run_zed_diagnostic.sh -r
-```
+ROS2 构建时不要让 `.venv` 接管 Python。`scripts/setup_ros2_zed.sh` 会刻意避开 `.venv`，并默认使用 `/usr/bin/python3`。
